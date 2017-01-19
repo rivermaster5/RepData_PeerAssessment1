@@ -1,25 +1,167 @@
+
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Week 2 Coursera Project"
+output: html_document
 ---
 
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the "quantified self" movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
 
-## Loading and preprocessing the data
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+The data for this assignment can be downloaded from the course web site:
+
+[Dataset: Activity monitoring data [52K]] (https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip)
+
+The variables included in this dataset are:
+
+steps: Number of steps taking in a 5-minute interval (missing values are coded as NA)
+date: The date on which the measurement was taken in YYYY-MM-DD format
+interval: Identifier for the 5-minute interval in which measurement was taken
+
+## Analysis
+
+First, we are setting our library and reading in the data
+
+```{r}
+### Set Libraries
+library(RCurl)
+library(data.table)
+library(lattice)
+
+### Importing
+
+# Download Data
+file <- 'http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip'
+
+# Import
+temp <- tempfile()
+download.file(file,temp, mode = 'wb')
+
+fns <- unzip(temp, junkpaths = TRUE, exdir = tempdir())
+list2env(setNames(lapply(fns, read.csv), basename(tools::file_path_sans_ext(fns))), globalenv())
+
+store_raw <- activity
+
+```
+
+Our pre-processing steps will prepare the data for several later analyses:
+
+1. We first check our data to see if there are any missing values we need to resolve:
+```{r}
+
+# Check for Nulls
+sapply(activity, function(x) sum(is.null(x)))
+
+# Check for NAs
+sapply(activity, function(x) sum(is.na(x)))
+```
+
+It appears we have NAs in our Steps field.  We will resolve those later.
+
+2. Classify our date field as a Date and mark those days as 'Weekdays' or 'Weekends'
+
+```{r}
+### Pre-Processing
+
+# Set date to Date type
+activity$date <- as.Date(activity$date)
+activity$dayoff <- factor(ifelse(weekdays(activity$date) == 'Saturday' |
+                                   weekdays(activity$date) == 'Saturday',
+                                 'Weekend',
+                                 'Weekday'))
+```
+
+3. Handle the missing Steps.  We approach this from two different strategies, and will output two different datasets for our use.
+
+Our first strategy is to simply **remove** all of the rows that contain missing data.
+
+```{r}
+activity1 <- activity[complete.cases(activity),]
+```
+
+Our second strategy is to **impute** the missing values with the mean steps of any given interval
+
+```{r}
+# Get the average number of steps by interval
+activity2 <- data.table(activity)
+activity2[, AvgSteps := mean(steps, na.rm = TRUE), by = interval]
+activity2 <- as.data.frame(activity2)
+activity2[is.na(activity2$steps),"steps"] <- activity2[is.na(activity2$steps),"AvgSteps"]
+activity2 <- activity2[,1:4]
+
+```
+
+```{r}
+# Check for NAs
+sapply(activity1, function(x) sum(is.na(x)))
+sapply(activity2, function(x) sum(is.na(x)))
+```
+
+Perfect!
 
 
+Let's print a histogram and the new mean/median of the steps by interval.  To avoid repeating code, we create a function that takes one of our datasets and conducts our analysis.  The analysis:
 
-## What is mean total number of steps taken per day?
+1. Creates a histogram of the steps
+
+2. Prints the mean number of steps
+
+3. Prints the median number of steps
+
+4. Plots a time series chart of the mean number of steps by interval
+
+5. Finds the interval with the highest number of steps
+
+```{r}
+# Embed in a function so comparison between cleaning stragies is simplified
+run_comparison <- function(x) {
+  # Histogram of steps
+  hist(x$steps, main = 'Histogram of Steps')
+  print(paste('Mean:',mean(x$steps)))
+  print(paste('Median:',median(x$steps)))
+  
+  # Average steps by time interval
+  avg_interval_steps <- with(x, aggregate(steps, by = list(interval), mean))
+  colnames(avg_interval_steps) <- c('interval', 'steps_avg')
+  
+  # Timeseries of steps by interval, averaged across dates
+  with(avg_interval_steps, plot(x = interval, y = steps_avg, type = 'l', main = 'Average Steps by Interval'))
+  
+  # Max interval
+  print("Max Interval:")
+  print(avg_interval_steps[avg_interval_steps$steps_avg == max(avg_interval_steps$steps_avg),])
+}
+
+```
+
+Let's compare...
+
+Stategy 1:
+
+```{r}
+# Run strategies
+run_comparison(activity1)
+```
+Stategy 2:
+
+```{r}
+# Run strategies
+run_comparison(activity2)
+```
 
 
+Finally, we're going to compare weekend vs weekday time series of average number of steps across intervals
 
-## What is the average daily activity pattern?
+```{r}
+# Run Weekday vs Weekend Analysis
 
+# Aggregate by Interval
+avg_interval_intervaldayoff <- aggregate(activity2$steps, by = list(activity2$interval, activity2$dayoff), mean)
+colnames(avg_interval_intervaldayoff) <- c('interval', 'dayoff', 'steps_avg')
 
-
-## Imputing missing values
-
-
-
-## Are there differences in activity patterns between weekdays and weekends?
+# Plot
+with(avg_interval_intervaldayoff,
+     xyplot(steps_avg~interval|dayoff,
+            type = 'l',
+            layout = c(1,2)))
+```
